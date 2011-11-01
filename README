@@ -1,0 +1,23 @@
+SAM9 - Atmel AT91SAM9 Stuff
+
+This project is a bucket for my public SAM9 work.  I am working initially with
+the at91sam9x25 chip, but this stuff should be helpful with other chips in the
+same family.  Hope you can make use of it!
+
+Files:
+
+  README  . . . . . . . . . . . . . this file
+  sam9boot.c  . . . . . . . . . . . source for sam-ba/romboot interface utility
+  Makefile  . . . . . . . . . . . . simple makefile to build sam9boot.c
+  romboot-1.4-16nov2010.bin . . . . binary dump of sam-ba 'RomBOOT' monitor
+
+Do the following to get started and get some help information:
+
+  make
+  ./sam9boot
+
+Also, this might be helpful:
+
+  cat romboot-1.4-16nov2010.bin | hexdump -C
+
+- Michael
