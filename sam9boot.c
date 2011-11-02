@@ -26,7 +26,7 @@
 //
 // ----------------------------------------------------------------------------
 
-#define VERSION "1.00" // 01-Nov-2011
+#define VERSION "1.01" // 02-Nov-2011
 
 #include <unistd.h>
 #include <stdio.h>
@@ -108,7 +108,8 @@ static void ConsoleSetRawMode( void) {
 
 // ----------------------------------------------------------------------------
 //  A primative pass-thru terminal emulator.  Set console to raw mode and set
-//  up to restore original settings on exit.  Local echo is also implemented.
+//  up to restore original settings on program exit.  Local echo is also
+//  implemented.
 // ----------------------------------------------------------------------------
 
 static void TerminalEmulator( int Console, int Sam9) {
@@ -118,6 +119,9 @@ static void TerminalEmulator( int Console, int Sam9) {
   do {
     if (FileInputAvailable( Console)) {
       Key = FileGetCharacter( Console);
+      if (Key == 0x0d) {
+        Key = '#'; // SAM-BA uses # as EOL character for some unknown reason
+      }
       write( Sam9, &Key, sizeof( Key));
       if ((Key > 0x1f) && (Key < 0x7f)) {
         write( Console, &Key, sizeof( Key));
@@ -128,7 +132,8 @@ static void TerminalEmulator( int Console, int Sam9) {
       Key = 0;
     }
   } while ((Key != 0x1b) && (Key != 0x03)); // escape or ctrl-c
-  printf( "\r\n[[ exit terminal mode ]]\r\n");
+  ConsoleResetRawMode();
+  printf( "\n[[ exit terminal mode ]]\n");
 }
 
 // ----------------------------------------------------------------------------
@@ -612,7 +617,7 @@ int main( int argc, ccptr argv[]) {
           TerminalEmulator( FileNoConsole, FileNoSam9);
         }
         fclose( Sam9);
-        printf( "\r\n");
+        printf( "\n");
       } else {
         fprintf( stderr, "*** Unable to open device '%s' for i/o!\n", ParamPort);
     } }
@@ -620,10 +625,10 @@ int main( int argc, ccptr argv[]) {
     ShowHelp( argv[0]);
   }
   if (Success) {
-    printf( "Exit code 0 - success.\r\n\n");
+    printf( "Exit code 0 - success.\n\n");
     return 0;
   }
-  printf( "*** Exit code 1 - failure!\r\n\n");
+  printf( "*** Exit code 1 - failure!\n\n");
   return 1;
 }
 
