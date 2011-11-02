@@ -49,6 +49,29 @@ typedef const char * ccptr;
 typedef       byte *  bptr;
 
 // ----------------------------------------------------------------------------
+//  Command-line parameter values.
+// ----------------------------------------------------------------------------
+
+static ccptr ParamPort      = "/dev/ttyUSB0";
+static ccptr ParamFileName  = NULL;
+static ccptr ParamAddrStart = "$300000";
+static ccptr ParamAddrGo    = NULL;
+static ccptr ParamBytes     = NULL;
+
+static bit32 ValueAddrGo    = 0;
+static bit32 ValueAddrStart = 0;
+static bit32 ValueBytes     = 0;
+
+static bool FlagReceive     = false;
+static bool FlagDump        = false;
+static bool FlagSend        = false;
+static bool FlagCpu         = false;
+static bool FlagVerify      = false;
+static bool FlagQuiet       = false;
+static bool FlagTrace       = false;
+static bool FlagInteractive = false;
+
+// ----------------------------------------------------------------------------
 //  Is input available on either the console or the RomBOOT serial port?
 // ----------------------------------------------------------------------------
 
@@ -80,7 +103,7 @@ static byte FileGetCharacter( int FileNumber) {
 //  io settings, and recent number of characters received from sam9.
 // ----------------------------------------------------------------------------
 
-static int FileNoConsole, FileNoSam9;
+static int FileNumberConsole, FileNumberSam9;
 static struct termios OriginalConsoleTermIOs;
 static bit32 ResponseCount = 0;
 
@@ -89,7 +112,7 @@ static bit32 ResponseCount = 0;
 // ----------------------------------------------------------------------------
 
 static void ConsoleResetRawMode( void) {
-  tcsetattr( FileNoConsole, TCSANOW, &OriginalConsoleTermIOs);
+  tcsetattr( FileNumberConsole, TCSANOW, &OriginalConsoleTermIOs);
 }
 
 // ----------------------------------------------------------------------------
@@ -98,42 +121,12 @@ static void ConsoleResetRawMode( void) {
 
 static void ConsoleSetRawMode( void) {
   struct termios NewTermIOs;
-  tcgetattr( FileNoConsole, &OriginalConsoleTermIOs);
+  tcgetattr( FileNumberConsole, &OriginalConsoleTermIOs);
   memcpy( &NewTermIOs, &OriginalConsoleTermIOs, sizeof( NewTermIOs));
   cfmakeraw( &NewTermIOs);
   NewTermIOs.c_iflag |= BRKINT;
-  tcsetattr( FileNoConsole, TCSANOW, &NewTermIOs);
+  tcsetattr( FileNumberConsole, TCSANOW, &NewTermIOs);
   atexit( ConsoleResetRawMode);
-}
-
-// ----------------------------------------------------------------------------
-//  A primative pass-thru terminal emulator.  Set console to raw mode and set
-//  up to restore original settings on program exit.  Local echo is also
-//  implemented.
-// ----------------------------------------------------------------------------
-
-static void TerminalEmulator( int Console, int Sam9) {
-  byte Key = 0;
-  printf( "\n[[ interactive terminal mode - <esc> or <ctrl-c> to exit ]]\n");
-  ConsoleSetRawMode();
-  do {
-    if (FileInputAvailable( Console)) {
-      Key = FileGetCharacter( Console);
-      if (Key == 0x0d) {
-        Key = '#'; // SAM-BA uses # as EOL character for some unknown reason
-      }
-      write( Sam9, &Key, sizeof( Key));
-      if ((Key > 0x1f) && (Key < 0x7f)) {
-        write( Console, &Key, sizeof( Key));
-    } }
-    if (FileInputAvailable( Sam9)) {
-      Key = FileGetCharacter( Sam9);
-      write( Console, &Key, sizeof( Key));
-      Key = 0;
-    }
-  } while ((Key != 0x1b) && (Key != 0x03)); // escape or ctrl-c
-  ConsoleResetRawMode();
-  printf( "\n[[ exit terminal mode ]]\n");
 }
 
 // ----------------------------------------------------------------------------
@@ -167,6 +160,47 @@ static bit32 GetResponse( int FileNumber, bool FlagTrace = true) {
 }
 
 // ----------------------------------------------------------------------------
+//  A primative pass-thru terminal emulator.  Set console to raw mode and set
+//  up to restore original settings on program exit.  Local echo is also
+//  implemented.  If a 'go' address is defined, execute it immediately after
+//  terminal initialization.
+// ----------------------------------------------------------------------------
+
+static void TerminalEmulator( fptr FileHandleSam9) {
+  byte Key = 0;
+  printf( "\n[[ interactive terminal mode - <esc> or <ctrl-c> to exit%s ]]\n", ParamAddrGo ? ", <enter> or # to GO" : "");
+  fflush( stdout);
+  ConsoleSetRawMode();
+  if (ParamAddrGo) {
+    fprintf( FileHandleSam9, "#\n", ValueAddrGo);
+    GetResponse( FileNumberSam9);
+    fprintf( FileHandleSam9, "G%X", ValueAddrGo);
+    fflush( FileHandleSam9);
+    GetResponse( FileNumberSam9);
+    printf( "G%X", ValueAddrGo);
+    fflush( stdout);
+  }
+  do {
+    if (FileInputAvailable( FileNumberConsole)) {
+      Key = FileGetCharacter( FileNumberConsole);
+      if (Key == 0x0d) {
+        Key = '#'; // SAM-BA uses # as EOL character for some unknown reason
+      }
+      write( FileNumberSam9, &Key, sizeof( Key));
+      if ((Key > 0x1f) && (Key < 0x7f)) {
+        write( FileNumberConsole, &Key, sizeof( Key));
+    } }
+    while (FileInputAvailable( FileNumberSam9)) {
+      Key = FileGetCharacter( FileNumberSam9);
+      write( FileNumberConsole, &Key, sizeof( Key));
+      Key = 0;
+    }
+  } while ((Key != 0x1b) && (Key != 0x03)); // escape or ctrl-c
+  ConsoleResetRawMode();
+  printf( "\n[[ exit terminal mode ]]\n");
+}
+
+// ----------------------------------------------------------------------------
 //  Convert a string to a 32-bit unsigned value.  Prefixes of 0x or $ indicate
 //  hex strings, otherwise decimal assumed.
 // ----------------------------------------------------------------------------
@@ -187,29 +221,6 @@ static bit32 NumericValue( ccptr String) {
   } } }
   return Value;
 }
-
-// ----------------------------------------------------------------------------
-//  Command-line parameter values.
-// ----------------------------------------------------------------------------
-
-static ccptr ParamPort      = "/dev/ttyUSB0";
-static ccptr ParamFileName  = NULL;
-static ccptr ParamAddrStart = "$300000";
-static ccptr ParamAddrGo    = NULL;
-static ccptr ParamBytes     = NULL;
-
-static bit32 ValueAddrGo    = 0;
-static bit32 ValueAddrStart = 0;
-static bit32 ValueBytes     = 0;
-
-static bool FlagReceive     = false;
-static bool FlagDump        = false;
-static bool FlagSend        = false;
-static bool FlagCpu         = false;
-static bool FlagVerify      = false;
-static bool FlagQuiet       = false;
-static bool FlagTrace       = false;
-static bool FlagInteractive = false;
 
 // ----------------------------------------------------------------------------
 //  Display usage information on console.
@@ -340,39 +351,39 @@ static bool ParseParameters( int argc, ccptr argv[]) {
 static bit32 MemoryCount = 0;
 static bptr MemoryBuffer = NULL;
 
-static bool LoadMemory( fptr Sam9, bit32 StartAddress, bit32 Count) {
+static bool LoadMemory( fptr FileHandleSam9, bit32 StartAddress, bit32 Count) {
   if (MemoryBuffer = (bptr) calloc( Count, 1)) {
     bit32 Address = StartAddress, Length = 0, Value;
     bit32 Chunk = ValueBytes > 3 ? 4 : 1;
     while (Length < Count) {
       switch (Chunk) {
         case 1:
-          fprintf( Sam9, "o%5.5X,1#\n", Address);
+          fprintf( FileHandleSam9, "o%5.5X,1#\n", Address);
           if (FlagTrace) {
             printf( "o%5.5X,1#", Address);
           }
           break;
         case 4:
-          fprintf( Sam9, "w%5.5X,4#\n", Address);
+          fprintf( FileHandleSam9, "w%5.5X,4#\n", Address);
           if (FlagTrace) {
             printf( "w%5.5X,4#", Address);
           }
           break;
       }
-      Value = GetResponse( FileNoSam9, FlagTrace);
+      Value = GetResponse( FileNumberSam9, FlagTrace);
       if (ResponseCount) {
-		    for (int n = 0; n < Chunk; n++) {
-		      MemoryBuffer[MemoryCount++] = Value & 0xff;
-		      Value >>= 8;
-		    }
-		    if ((Length % 256) == 0) {
-		      printf( "Downloading memory from $%x (%d bytes)...\r", StartAddress, Length);
-		      fflush( stdout);
-		    }
-		    Address += Chunk;
-		    Length += Chunk;
-		    if (Count - Length < 4) {
-		      Chunk = 1;
+        for (int n = 0; n < Chunk; n++) {
+          MemoryBuffer[MemoryCount++] = Value & 0xff;
+          Value >>= 8;
+        }
+        if ((Length % 256) == 0) {
+          printf( "Downloading memory from $%x (%d bytes)...\r", StartAddress, Length);
+          fflush( stdout);
+        }
+        Address += Chunk;
+        Length += Chunk;
+        if (Count - Length < 4) {
+          Chunk = 1;
         }
       } else {
         fprintf( stderr, "*** Failed to download memory from $%x (%d bytes, %d expected, target unresponsive)!\n", StartAddress, MemoryCount, Count);
@@ -433,18 +444,18 @@ int main( int argc, ccptr argv[]) {
   if (argc > 1) {
     if (ParseParameters( argc, argv)) {
       printf( "\n");
-      if (fptr Sam9 = fopen( ParamPort, "a+b")) {
-        FileNoConsole = fileno( stdin);
-        FileNoSam9 = fileno( Sam9);
-        fprintf( Sam9, "#\n");
+      if (fptr FileHandleSam9 = fopen( ParamPort, "a+b")) {
+        FileNumberConsole = fileno( stdin);
+        FileNumberSam9 = fileno( FileHandleSam9);
+        fprintf( FileHandleSam9, "#\n");
         if (FlagQuiet == false) {
           printf( "#");
         }
-        GetResponse( FileNoSam9, FlagQuiet ? false : true);
+        GetResponse( FileNumberSam9, FlagQuiet ? false : true);
         if (FlagQuiet == false) {
-          fprintf( Sam9, "V#\n");
+          fprintf( FileHandleSam9, "V#\n");
           printf( "V#");
-          GetResponse( FileNoSam9);
+          GetResponse( FileNumberSam9);
         }
 
         //-------
@@ -452,9 +463,9 @@ int main( int argc, ccptr argv[]) {
         //-------
 
         if (FlagCpu) {
-          fprintf( Sam9, "wfffff240,4#\n");
+          fprintf( FileHandleSam9, "wfffff240,4#\n");
           printf( "wfffff240,4#");
-          bit32 PartId = GetResponse( FileNoSam9);
+          bit32 PartId = GetResponse( FileNumberSam9);
           if (ResponseCount) {
             printf( "PartId = $%8.8X\n", PartId);
           } else {
@@ -463,7 +474,7 @@ int main( int argc, ccptr argv[]) {
             fflush( stderr);
             Success = false;
         } }
-        GetResponse( FileNoSam9);
+        GetResponse( FileNumberSam9);
         printf( "\n");
 
         //---------------------------------
@@ -472,10 +483,10 @@ int main( int argc, ccptr argv[]) {
 
         if (Success && (FlagSend | FlagVerify)) {
           if (ParamFileName) {
-		        if (LoadFile( ParamFileName)) {
-		          printf( "Loaded file '%s' (%d bytes) from disk.\n", ParamFileName, ValueBytes);
-		        } else {
-		          Success = false;
+            if (LoadFile( ParamFileName)) {
+              printf( "Loaded file '%s' (%d bytes) from disk.\n", ParamFileName, ValueBytes);
+            } else {
+              Success = false;
             }
           } else {
             printf( "*** Parameters '-s' and '-v' require '-f'!\n");
@@ -496,19 +507,19 @@ int main( int argc, ccptr argv[]) {
             }
             switch (Chunk) {
               case 1:
-                fprintf( Sam9, "O%5.5X,%2.2X#\n", Address, Value);
+                fprintf( FileHandleSam9, "O%5.5X,%2.2X#\n", Address, Value);
                 if (FlagTrace) {
                   printf( "O%5.5X,%2.2X#", Address, Value);
                 }
                 break;
               case 4:
-                fprintf( Sam9, "W%5.5X,%8.8X#\n", Address, Value);
+                fprintf( FileHandleSam9, "W%5.5X,%8.8X#\n", Address, Value);
                 if (FlagTrace) {
                   printf( "W%5.5X,%8.8X#", Address, Value);
                 }
                 break;
             }
-            GetResponse( FileNoSam9, FlagTrace);
+            GetResponse( FileNumberSam9, FlagTrace);
             Address += Chunk;
             if ((Length % 256) == 0) {
               printf( "Uploading file '%s' (%d bytes) to memory at $%x...\r", ParamFileName, Length, ValueAddrStart);
@@ -528,11 +539,11 @@ int main( int argc, ccptr argv[]) {
 
         if (Success && (FlagVerify | FlagReceive | FlagDump)) {
           if (ValueBytes) {
-		        if (LoadMemory( Sam9, ValueAddrStart, ValueBytes)) {
-		          printf( "Downloaded memory from $%x (%d bytes).\n", ValueAddrStart, ValueBytes);
-		        } else {
-		          Success = false;
-		        }
+            if (LoadMemory( FileHandleSam9, ValueAddrStart, ValueBytes)) {
+              printf( "Downloaded memory from $%x (%d bytes).\n", ValueAddrStart, ValueBytes);
+            } else {
+              Success = false;
+            }
           } else {
             printf( "*** Parameter '-d' requires '-n'!\n");
             Success = false;
@@ -543,13 +554,13 @@ int main( int argc, ccptr argv[]) {
         //-------------------------------
         if (Success && FlagVerify) {
           if (ValueBytes) {
-		        for (bit32 i = 0; Success && (i < ValueBytes); i++) {
-		          if (FileBuffer[i] != MemoryBuffer[i]) {
-		            fprintf( stderr, "*** Verify memory at $%x (%d bytes) error at offset %d!\n", ValueAddrStart, ValueBytes, i);
-		            Success = false;
-		        } }
-		        if (Success) {
-		          printf( "Verified memory at $%x (%d bytes).\n", ValueAddrStart, ValueBytes);
+            for (bit32 i = 0; Success && (i < ValueBytes); i++) {
+              if (FileBuffer[i] != MemoryBuffer[i]) {
+                fprintf( stderr, "*** Verify memory at $%x (%d bytes) error at offset %d!\n", ValueAddrStart, ValueBytes, i);
+                Success = false;
+            } }
+            if (Success) {
+              printf( "Verified memory at $%x (%d bytes).\n", ValueAddrStart, ValueBytes);
             }
           } else {
             printf( "*** Parameter '-v' requires '-n'!\n");
@@ -599,24 +610,19 @@ int main( int argc, ccptr argv[]) {
             Address += 16;
         } }
 
-        //-----------------
-        //  go to address
-        //-----------------
-
-        if (Success && ParamAddrGo) {
-          fprintf( Sam9, "G%X#\n", ValueAddrGo);
-          printf( "G%X#\n", ValueAddrGo);
-          GetResponse( FileNoSam9);
-        }
-
-        //-----------------------------
-        //  interactive terminal mode
-        //-----------------------------
+        //---------------------------------------------
+        //  interactive terminal mode w/optional 'go'
+        //---------------------------------------------
 
         if (FlagInteractive) {
-          TerminalEmulator( FileNoConsole, FileNoSam9);
-        }
-        fclose( Sam9);
+          TerminalEmulator( FileHandleSam9);
+        } else {
+          if (Success && ParamAddrGo) {
+            fprintf( FileHandleSam9, "G%X#\n", ValueAddrGo);
+            printf( "G%X#\n", ValueAddrGo);
+            GetResponse( FileNumberSam9);
+        } }
+        fclose( FileHandleSam9);
         printf( "\n");
       } else {
         fprintf( stderr, "*** Unable to open device '%s' for i/o!\n", ParamPort);
