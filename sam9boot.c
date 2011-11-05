@@ -1,20 +1,20 @@
 // ----------------------------------------------------------------------------
-// sam9boot - Utility to simplify dealing with the SAM9 RomBOOT facility.
-// Copyright (C) 2011 Michael E. Nagy
+// sam9boot - Atmel SAM9 SAM-BA RomBOOT interface utility.
 // ----------------------------------------------------------------------------
 //
-// This program is free software; you can redistribute it and/or
-// modify it under the terms of the GNU Lesser General Public
-// License as published by the Free Software Foundation; either
-// version 2.1 of the License, or (at your option) any later version.
+//   Copyright 2011 Michael E. Nagy
 //
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-// Lesser General Public License for more details.
+//   Licensed under the Apache License, Version 2.0 (the "License");
+//   you may not use this file except in compliance with the License.
+//   You may obtain a copy of the License at
 //
-// You should have received a copy of the GNU Lesser General Public
-// License along with this library; If not, see <http://www.gnu.org/licenses/>.
+//       http://www.apache.org/licenses/LICENSE-2.0
+//
+//   Unless required by applicable law or agreed to in writing, software
+//   distributed under the License is distributed on an "AS IS" BASIS,
+//   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//   See the License for the specific language governing permissions and
+//   limitations under the License.
 //
 // ----------------------------------------------------------------------------
 //
@@ -26,7 +26,7 @@
 //
 // ----------------------------------------------------------------------------
 
-#define VERSION "1.01" // 02-Nov-2011
+#define VERSION "1.02" // 05-Nov-2011
 
 #include <unistd.h>
 #include <stdio.h>
@@ -55,10 +55,10 @@ typedef       byte *  bptr;
 static ccptr ParamPort      = "/dev/ttyUSB0";
 static ccptr ParamFileName  = NULL;
 static ccptr ParamAddrStart = "$300000";
-static ccptr ParamAddrGo    = NULL;
+static ccptr ParamAddrJump  = NULL;
 static ccptr ParamBytes     = NULL;
 
-static bit32 ValueAddrGo    = 0;
+static bit32 ValueAddrJump  = 0;
 static bit32 ValueAddrStart = 0;
 static bit32 ValueBytes     = 0;
 
@@ -70,6 +70,7 @@ static bool FlagVerify      = false;
 static bool FlagQuiet       = false;
 static bool FlagTrace       = false;
 static bool FlagInteractive = false;
+static bool FlagGo          = false;
 
 // ----------------------------------------------------------------------------
 //  Is input available on either the console or the RomBOOT serial port?
@@ -168,17 +169,17 @@ static bit32 GetResponse( int FileNumber, bool FlagTrace = true) {
 
 static void TerminalEmulator( fptr FileHandleSam9) {
   byte Key = 0;
-  printf( "\n[[ interactive terminal mode - <esc> or <ctrl-c> to exit%s ]]\n", ParamAddrGo ? ", <enter> or # to GO" : "");
+  printf( "\n[[ interactive terminal mode - <esc> or <ctrl-c> to exit%s ]]\n", ParamAddrJump && (FlagGo == false) ? ", <enter> or # to GO" : "");
   fflush( stdout);
   ConsoleSetRawMode();
-  if (ParamAddrGo) {
-    fprintf( FileHandleSam9, "#\n", ValueAddrGo);
+  if (ParamAddrJump) {
+    fprintf( FileHandleSam9, "#\n", ValueAddrJump);
     GetResponse( FileNumberSam9);
-    fprintf( FileHandleSam9, "G%X", ValueAddrGo);
+    printf( "G%X%s", ValueAddrJump, FlagGo ? "#" : "");
+    fflush( stdout);
+    fprintf( FileHandleSam9, "G%X%s", ValueAddrJump, FlagGo ? "#" : "");
     fflush( FileHandleSam9);
     GetResponse( FileNumberSam9);
-    printf( "G%X", ValueAddrGo);
-    fflush( stdout);
   }
   do {
     if (FileInputAvailable( FileNumberConsole)) {
@@ -233,7 +234,7 @@ static void ShowHelp( ccptr ExecutableName) {
   printf( "Usage:  %s\n", ExecutableName);
   printf( "           {-p=port}\n");
   printf( "              {-f=filename {-a=address} {-n=bytes {-r} {-d}} {-s}}\n");
-  printf( "                  {-g{=address}} {-c} {-v} {-q} {-t} {-i}\n");
+  printf( "                  {-j{=address} -g} {-c} {-v} {-q} {-t} {-i}\n");
   printf( "\n");
   printf( "Where:\n");
   printf( "\n");
@@ -244,17 +245,21 @@ static void ShowHelp( ccptr ExecutableName) {
   printf( "   -r . . . . . . . . . . . receive file (also specify -f, -a and -n)\n");
   printf( "   -d . . . . . . . . . . . dump memory (also specify -a and -n or -s)\n");
   printf( "   -s . . . . . . . . . . . send file (also specify -f and -a)\n");
-  printf( "   -g{=address} . . . . . . address to jump to (default -a)\n");
+  printf( "   -j{=address} . . . . . . address to jump to (default -a)\n");
+  printf( "   -g . . . . . . . . . . . go/start execution (also specify -j) \n");
   printf( "   -c . . . . . . . . . . . query cpu part id\n");
   printf( "   -v . . . . . . . . . . . verify memory against file (also specify -f)\n");
   printf( "   -q . . . . . . . . . . . quiet (no non-essential i/o or messages)\n");
   printf( "   -t . . . . . . . . . . . trace details of upload/verify activity\n");
   printf( "   -i . . . . . . . . . . . interactive (terminal) mode\n");
   printf( "\n");
-  printf( "All parameters are additive.  Relative order only matters for -a and -g.  Numeric\n");
+  printf( "All parameters are additive.  Relative order only matters for -a and -j.  Numeric\n");
   printf( "values may be entered as decimal (no prefix) or as hex with either 0x or $ prefix.\n");
   printf( "Parameters -r and -s are mutually exclusive.  If -s is specified, the actual send\n");
-  printf( "file size overrides -n.\n");
+  printf( "file size overrides -n.  The -j option specifies where to start execution.  If it\n");
+  printf( "is specified without -i execution is automatic.  If -i is also specified, then it\n");
+  printf( "enters the SAM-BA 'go' command without executing it so you may do so manually via\n");
+  printf( "the terminal interface.  To force automatic execution in -i mode also specify -g.\n");
   printf( "\n");
 }
 
@@ -272,7 +277,7 @@ static bool ParseParameters( int argc, ccptr argv[]) {
       Success = false;
     } else {
       switch( x[1]) {
-        case 'p': case 'f': case 'a': case 'n': case 'g':
+        case 'p': case 'f': case 'a': case 'n': case 'j':
           if (strlen( x) > 3) {
             if (x[2] == '=') {
               switch( x[1]) { // parameters with arguments
@@ -280,19 +285,19 @@ static bool ParseParameters( int argc, ccptr argv[]) {
                 case 'f': ParamFileName  = x+3; break;
                 case 'a': ParamAddrStart = x+3; break;
                 case 'n': ParamBytes     = x+3; break;
-                case 'g': ParamAddrGo    = x+3; break;
+                case 'j': ParamAddrJump    = x+3; break;
               }
             } else {
               Success = false;
             }
           } else {
-            if ((x[1] == 'g') && (strlen( x) == 2)) {
-              ParamAddrGo = ParamAddrStart;
+            if ((x[1] == 'j') && (strlen( x) == 2)) {
+              ParamAddrJump = ParamAddrStart;
             } else {
               Success = false;
           } }
           break;
-        case 'r': case 'd': case 's': case 'c': case 'v': case 'q': case 't': case 'i':
+        case 'r': case 'd': case 's': case 'c': case 'v': case 'q': case 't': case 'i': case 'g':
           switch( x[1]) { // simple switch parameters
             case 'r': FlagReceive     = true; break;
             case 'd': FlagDump        = true; break;
@@ -302,6 +307,7 @@ static bool ParseParameters( int argc, ccptr argv[]) {
             case 'q': FlagQuiet       = true; break;
             case 't': FlagTrace       = true; break;
             case 'i': FlagInteractive = true; break;
+            case 'g': FlagGo          = true; break;
             default:
               Success = false;
           }
@@ -332,8 +338,8 @@ static bool ParseParameters( int argc, ccptr argv[]) {
   if (ParamAddrStart) {
     ValueAddrStart = NumericValue( ParamAddrStart);
   }
-  if (ParamAddrGo) {
-    ValueAddrGo = NumericValue( ParamAddrGo);
+  if (ParamAddrJump) {
+    ValueAddrJump = NumericValue( ParamAddrJump);
   }
   if (ParamBytes) {
     ValueBytes = NumericValue( ParamBytes);
@@ -617,9 +623,9 @@ int main( int argc, ccptr argv[]) {
         if (FlagInteractive) {
           TerminalEmulator( FileHandleSam9);
         } else {
-          if (Success && ParamAddrGo) {
-            fprintf( FileHandleSam9, "G%X#\n", ValueAddrGo);
-            printf( "G%X#\n", ValueAddrGo);
+          if (Success && ParamAddrJump) {
+            fprintf( FileHandleSam9, "G%X#\n", ValueAddrJump);
+            printf( "G%X#\n", ValueAddrJump);
             GetResponse( FileNumberSam9);
         } }
         fclose( FileHandleSam9);
