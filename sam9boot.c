@@ -26,7 +26,7 @@
 //
 // ----------------------------------------------------------------------------
 
-#define VERSION "1.02" // 05-Nov-2011
+#define VERSION "1.03" // 14-Nov-2011
 
 #include <unistd.h>
 #include <stdio.h>
@@ -107,6 +107,26 @@ static byte FileGetCharacter( int FileNumber) {
 static int FileNumberConsole, FileNumberSam9;
 static struct termios OriginalConsoleTermIOs;
 static bit32 ResponseCount = 0;
+
+// ----------------------------------------------------------------------------
+//  Set up the sam9 serial port for 115200 i/o.
+// ----------------------------------------------------------------------------
+
+static void Sam9SetSerialMode( void) {
+  struct termios Sam9TermIOs;
+  tcgetattr( FileNumberSam9, &Sam9TermIOs);
+//  memcpy( &NewTermIOs, &OriginalConsoleTermIOs, sizeof( NewTermIOs));
+//  cfmakeraw( &NewTermIOs);
+//  NewTermIOs.c_iflag |= BRKINT;
+  if (cfsetispeed( &Sam9TermIOs, B115200)) {
+    fprintf( stderr, "*** cfsetispeed FAIL!\n");
+  }
+  if (cfsetospeed( &Sam9TermIOs, B115200)) {
+    fprintf( stderr, "*** cfsetospeed FAIL!\n");
+  }
+  tcsetattr( FileNumberSam9, TCSANOW, &Sam9TermIOs);
+//  atexit( ConsoleResetRawMode);
+}
 
 // ----------------------------------------------------------------------------
 //  Reset console to initial terminal io settings.
@@ -453,6 +473,7 @@ int main( int argc, ccptr argv[]) {
       if (fptr FileHandleSam9 = fopen( ParamPort, "a+b")) {
         FileNumberConsole = fileno( stdin);
         FileNumberSam9 = fileno( FileHandleSam9);
+        Sam9SetSerialMode();
         fprintf( FileHandleSam9, "#\n");
         if (FlagQuiet == false) {
           printf( "#");
