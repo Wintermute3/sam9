@@ -26,7 +26,7 @@
 //
 // ----------------------------------------------------------------------------
 
-#define VERSION "1.03" // 14-Nov-2011
+#define VERSION "1.04" // 02-Dec-2011
 
 #include <unistd.h>
 #include <stdio.h>
@@ -207,10 +207,11 @@ static void TerminalEmulator( fptr FileHandleSam9) {
       if (Key == 0x0d) {
         Key = '#'; // SAM-BA uses # as EOL character for some unknown reason
       }
-      write( FileNumberSam9, &Key, sizeof( Key));
-      if ((Key > 0x1f) && (Key < 0x7f)) {
-        write( FileNumberConsole, &Key, sizeof( Key));
-    } }
+      if ((Key != 0x1b) && (Key != 0x03)) { // escape or ctrl-c
+        write( FileNumberSam9, &Key, sizeof( Key));
+        if ((Key > 0x1f) && (Key < 0x7f)) {
+          write( FileNumberConsole, &Key, sizeof( Key));
+    } } }
     while (FileInputAvailable( FileNumberSam9)) {
       Key = FileGetCharacter( FileNumberSam9);
       write( FileNumberConsole, &Key, sizeof( Key));
