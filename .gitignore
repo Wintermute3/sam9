@@ -1,3 +1,8 @@
 loader/
+u-boot/
+buildroot-2011.05/
+buildroot-2011.05.tar.bz2
+loader.tar.bz2
+u-boot.tar.bz2
 sam9boot
 
